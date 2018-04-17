@@ -10,7 +10,7 @@
     modelPath: null,
 
     deployHttpProxy: false,
-    defaultHttpProxyImage: "gcr.io/kubeflow-images-staging/tf-model-server-http-proxy:v20180327-995786ec",
+    defaultHttpProxyImage: "katacoda/tensorflow_serving",
     httpProxyImage: "",
     httpProxyImageToUse: if $.params.httpProxyImage == "" then
       $.params.defualtHttpProxyImage
@@ -108,7 +108,7 @@
       image: $.params.modelServerImage,
       imagePullPolicy: "IfNotPresent",
       args: [
-        "/usr/bin/tensorflow_model_server",
+        "/serving/bazel-bin/tensorflow_serving/model_servers/tensorflow_model_server",
         "--port=9000",
         "--model_name=" + $.params.modelName,
         "--model_base_path=" + $.params.modelPath,
