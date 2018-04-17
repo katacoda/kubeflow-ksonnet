@@ -50,7 +50,7 @@
             containers: [
               {
                 command: [
-                  "/opt/mlkube/tf-operator",
+                  "/opt/mlkube/tf_operator",
                   "--controller-config-file=/etc/config/controller_config_file.yaml",
                   "--alsologtostderr",
                   "-v=1",
@@ -331,41 +331,6 @@
         namespace: namespace,
       },
     },  // uiServiceAccount
-
-    ui(image):: {
-      apiVersion: "extensions/v1beta1",
-      kind: "Deployment",
-      metadata: {
-        name: "tf-job-dashboard",
-        namespace: namespace,
-      },
-      spec: {
-        template: {
-          metadata: {
-            labels: {
-              name: "tf-job-dashboard",
-            },
-          },
-          spec: {
-            containers: [
-              {
-                command: [
-                  "/opt/tensorflow_k8s/dashboard/backend",
-                ],
-                image: image,
-                name: "tf-job-dashboard",
-                ports: [
-                  {
-                    containerPort: 8080,
-                  },
-                ],
-              },
-            ],
-            serviceAccountName: "tf-job-dashboard",
-          },
-        },
-      },
-    },  // ui
 
     uiRole:: {
       apiVersion: "rbac.authorization.k8s.io/v1beta1",
