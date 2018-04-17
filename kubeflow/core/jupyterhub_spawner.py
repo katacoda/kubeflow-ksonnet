@@ -44,7 +44,7 @@ class KubeFormSpawner(KubeSpawner):
 
   @property
   def singleuser_image_spec(self):
-    image = 'gcr.io/kubeflow/tensorflow-notebook-cpu'
+    image = 'gcr.io/kubeflow/tensorflow-notebook-cpu:v1'
     if self.user_options.get('image'):
       image = self.user_options['image']
     return image
@@ -84,7 +84,7 @@ c.JupyterHub.cleanup_servers = False
 ### Spawner Options
 ###################################################
 c.JupyterHub.spawner_class = KubeFormSpawner
-c.KubeSpawner.singleuser_image_spec = 'gcr.io/kubeflow/tensorflow-notebook'
+c.KubeSpawner.singleuser_image_spec = 'gcr.io/kubeflow/tensorflow-notebook-cpu:v1'
 c.KubeSpawner.cmd = 'start-singleuser.sh'
 c.KubeSpawner.args = ['--allow-root']
 # gpu images are very large ~15GB. need a large timeout.
