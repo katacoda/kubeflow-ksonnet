@@ -5,7 +5,12 @@
     $.parts(params.namespace).serviceAccount,
     $.parts(params.namespace).operatorRole,
     $.parts(params.namespace).operatorRoleBinding,
-    $.parts(params.namespace).crd
+    $.parts(params.namespace).crd,
+    $.parts(params.namespace).uiRole,
+    $.parts(params.namespace).uiRoleBinding,
+    $.parts(params.namespace).uiService(params.tfJobUiServiceType),
+    $.parts(params.namespace).uiServiceAccount,
+    $.parts(params.namespace).ui(params.tfJobImage)
   ],
 
   parts(namespace):: {
@@ -281,5 +286,194 @@
         },
       ],
     },  // operator-role binding
+
+    uiService(serviceType):: {
+      apiVersion: "v1",
+      kind: "Service",
+      metadata: {
+        name: "tf-job-dashboard",
+        namespace: namespace,
+        annotations: {
+          "getambassador.io/config":
+            std.join("\n", [
+              "---",
+              "apiVersion: ambassador/v0",
+              "kind:  Mapping",
+              "name: tfjobs-ui-mapping",
+              "prefix: /tfjobs/",
+              "rewrite: /tfjobs/",
+              "service: tf-job-dashboard." + namespace,
+            ]),
+        },  //annotations
+      },
+      spec: {
+        ports: [
+          {
+            port: 80,
+            targetPort: 8080,
+          },
+        ],
+        selector: {
+          name: "tf-job-dashboard",
+        },
+        type: serviceType,
+      },
+    },  // uiService
+
+    uiServiceAccount: {
+      apiVersion: "v1",
+      kind: "ServiceAccount",
+      metadata: {
+        labels: {
+          app: "tf-job-dashboard",
+        },
+        name: "tf-job-dashboard",
+        namespace: namespace,
+      },
+    },  // uiServiceAccount
+
+    ui(image):: {
+      apiVersion: "extensions/v1beta1",
+      kind: "Deployment",
+      metadata: {
+        name: "tf-job-dashboard",
+        namespace: namespace,
+      },
+      spec: {
+        template: {
+          metadata: {
+            labels: {
+              name: "tf-job-dashboard",
+            },
+          },
+          spec: {
+            containers: [
+              {
+                command: [
+                  "/opt/tensorflow_k8s/dashboard/backend",
+                ],
+                image: image,
+                name: "tf-job-dashboard",
+                ports: [
+                  {
+                    containerPort: 8080,
+                  },
+                ],
+              },
+            ],
+            serviceAccountName: "tf-job-dashboard",
+          },
+        },
+      },
+    },  // ui
+
+    uiRole:: {
+      apiVersion: "rbac.authorization.k8s.io/v1beta1",
+      kind: "ClusterRole",
+      metadata: {
+        labels: {
+          app: "tf-job-dashboard",
+        },
+        name: "tf-job-dashboard",
+      },
+      rules: [
+        {
+          apiGroups: [
+            "tensorflow.org",
+            "kubeflow.org",
+          ],
+          resources: [
+            "tfjobs",
+          ],
+          verbs: [
+            "*",
+          ],
+        },
+        {
+          apiGroups: [
+            "apiextensions.k8s.io",
+          ],
+          resources: [
+            "customresourcedefinitions",
+          ],
+          verbs: [
+            "*",
+          ],
+        },
+        {
+          apiGroups: [
+            "storage.k8s.io",
+          ],
+          resources: [
+            "storageclasses",
+          ],
+          verbs: [
+            "*",
+          ],
+        },
+        {
+          apiGroups: [
+            "batch",
+          ],
+          resources: [
+            "jobs",
+          ],
+          verbs: [
+            "*",
+          ],
+        },
+        {
+          apiGroups: [
+            "",
+          ],
+          resources: [
+            "configmaps",
+            "pods",
+            "services",
+            "endpoints",
+            "persistentvolumeclaims",
+            "events",
+          ],
+          verbs: [
+            "*",
+          ],
+        },
+        {
+          apiGroups: [
+            "apps",
+            "extensions",
+          ],
+          resources: [
+            "deployments",
+          ],
+          verbs: [
+            "*",
+          ],
+        },
+      ],
+    },  // uiRole
+
+    uiRoleBinding:: {
+      apiVersion: "rbac.authorization.k8s.io/v1beta1",
+      kind: "ClusterRoleBinding",
+      metadata: {
+        labels: {
+          app: "tf-job-dashboard",
+        },
+        name: "tf-job-dashboard",
+      },
+      roleRef: {
+        apiGroup: "rbac.authorization.k8s.io",
+        kind: "ClusterRole",
+        name: "tf-job-dashboard",
+      },
+      subjects: [
+        {
+          kind: "ServiceAccount",
+          name: "tf-job-dashboard",
+          namespace: namespace,
+        },
+      ],
+    },  // uiRoleBinding
   },
 }
