@@ -1,17 +1,92 @@
 {
-  parts(params):: [
-    {
+  all(params):: [
+    $.parts(params.namespace).jupyterHubConfigMap(params.jupyterHubAuthenticator, params.disks),
+    $.parts(params.namespace).jupyterHubService,
+    $.parts(params.namespace).jupyterHubLoadBalancer(params.jupyterHubServiceType),
+    $.parts(params.namespace).jupyterHub(params.jupyterHubImage, params.jupyterNotebookPVCMount, params.cloud, params.jupyterNotebookRegistry, params.jupyterNotebookRepoName),
+    $.parts(params.namespace).jupyterHubRole,
+    $.parts(params.namespace).jupyterHubServiceAccount,
+    $.parts(params.namespace).jupyterHubRoleBinding,
+  ],
+
+  parts(namespace):: {
+    jupyterHubConfigMap(jupyterHubAuthenticator, disks): {
+      local util = import "kubeflow/core/util.libsonnet",
+      local diskNames = util.toArray(disks),
+      local kubeSpawner = $.parts(namespace).kubeSpawner(jupyterHubAuthenticator, diskNames),
+      result:: $.parts(namespace).jupyterHubConfigMapWithSpawner(kubeSpawner),
+    }.result,
+
+    kubeSpawner(authenticator, volumeClaims=[]): {
+      // TODO(jlewi): We should make whether we use PVC configurable.
+      local baseKubeConfigSpawner = importstr "kubeform_spawner.py",
+
+      authenticatorOptions:: {
+
+        //## Authenticator Options
+        local kubeConfigDummyAuthenticator = "c.JupyterHub.authenticator_class = 'dummyauthenticator.DummyAuthenticator'",
+
+        // This configuration allows us to use the id provided by IAP.
+        local kubeConfigIAPAuthenticator = @"c.JupyterHub.authenticator_class ='jhub_remote_user_authenticator.remote_user_auth.RemoteUserAuthenticator'
+c.RemoteUserAuthenticator.header_name = 'x-goog-authenticated-user-email'",
+
+        options:: std.join("\n", std.prune([
+          "######## Authenticator ######",
+          if authenticator == "iap" then
+            kubeConfigIAPAuthenticator else
+            kubeConfigDummyAuthenticator,
+        ])),
+      }.options,  // authenticatorOptions
+
+      volumeOptions:: {
+        local volumes = std.map(function(v)
+          {
+            name: v,
+            persistentVolumeClaim: {
+              claimName: v,
+            },
+          }, volumeClaims),
+
+
+        local volumeMounts = std.map(function(v)
+          {
+            mountPath: "/mnt/" + v,
+            name: v,
+          }, volumeClaims),
+
+        options::
+          if std.length(volumeClaims) > 0 then
+            // we need to merge the PVC from the spawner config
+            // with any added by a provisioner
+            std.join("\n",
+                     [
+                       "###### Volumes #######",
+                       "c.KubeSpawner.volumes.extend(" + std.manifestPython(volumes) + ")",
+                       "c.KubeSpawner.volume_mounts.extend(" + std.manifestPython(volumeMounts) + ")",
+                     ])
+          else "",
+
+      }.options,  // volumeOptions
+
+      spawner:: std.join("\n", std.prune([baseKubeConfigSpawner, self.authenticatorOptions, self.volumeOptions])),
+    }.spawner,  // kubeSpawner
+
+    local baseJupyterHubConfigMap = {
       apiVersion: "v1",
       kind: "ConfigMap",
       metadata: {
         name: "jupyterhub-config",
-        namespace: params.namespace,
-      },
-      data: {
-        "jupyterhub_config.py": importstr "kubeform_spawner.py",
+        namespace: namespace,
       },
     },
-    {
+
+    jupyterHubConfigMapWithSpawner(spawner): baseJupyterHubConfigMap {
+      data: {
+        "jupyterhub_config.py": spawner,
+      },
+    },
+
+    jupyterHubService: {
       apiVersion: "v1",
       kind: "Service",
       metadata: {
@@ -19,10 +94,7 @@
           app: "tf-hub",
         },
         name: "tf-hub-0",
-        namespace: params.namespace,
-        annotations: {
-          "prometheus.io/scrape": "true",
-        },
+        namespace: namespace,
       },
       spec: {
         // We want a headless service so we set the ClusterIP to be None.
@@ -40,7 +112,7 @@
       },
     },
 
-    {
+    jupyterHubLoadBalancer(serviceType): {
       apiVersion: "v1",
       kind: "Service",
       metadata: {
@@ -48,7 +120,7 @@
           app: "tf-hub-lb",
         },
         name: "tf-hub-lb",
-        namespace: params.namespace,
+        namespace: namespace,
         annotations: {
           "getambassador.io/config":
             std.join("\n", [
@@ -59,7 +131,7 @@
               "prefix: /hub/",
               "rewrite: /hub/",
               "timeout_ms: 300000",
-              "service: tf-hub-lb." + params.namespace,
+              "service: tf-hub-lb." + namespace,
               "---",
               "apiVersion: ambassador/v0",
               "kind:  Mapping",
@@ -67,7 +139,7 @@
               "prefix: /user/",
               "rewrite: /user/",
               "timeout_ms: 300000",
-              "service: tf-hub-lb." + params.namespace,
+              "service: tf-hub-lb." + namespace,
             ]),
         },  //annotations
       },
@@ -82,15 +154,17 @@
         selector: {
           app: "tf-hub",
         },
-        type: params.serviceType,
+        type: serviceType,
       },
     },
-    {
+
+    // image: Image for JupyterHub
+    jupyterHub(image, notebookPVCMount, cloud, registry, repoName): {
       apiVersion: "apps/v1beta1",
       kind: "StatefulSet",
       metadata: {
         name: "tf-hub",
-        namespace: params.namespace,
+        namespace: namespace,
       },
       spec: {
         replicas: 1,
@@ -109,7 +183,7 @@
                   "-f",
                   "/etc/config/jupyterhub_config.py",
                 ],
-                image: params.image,
+                image: image,
                 name: "tf-hub",
                 volumeMounts: [
                   {
@@ -127,37 +201,24 @@
                     containerPort: 8081,
                   },
                 ],
-                env: std.prune([
+                env: [
                   {
                     name: "NOTEBOOK_PVC_MOUNT",
-                    value: params.notebookPVCMount,
+                    value: notebookPVCMount,
                   },
                   {
                     name: "CLOUD_NAME",
-                    value: params.cloud,
+                    value: cloud,
                   },
                   {
                     name: "REGISTRY",
-                    value: params.registry,
+                    value: registry,
                   },
                   {
                     name: "REPO_NAME",
-                    value: params.repoName,
+                    value: repoName,
                   },
-                  {
-                    name: "KF_AUTHENTICATOR",
-                    value: params.jupyterHubAuthenticator,
-                  },
-                  {
-                    name: "KF_PVC_LIST",
-                    value: params.disks,
-                  },
-                  if params.cloud == "gke" then
-                    {
-                      name: "GCP_SECRET_NAME",
-                      value: params.gcpSecretName,
-                    },
-                ]),
+                ],
               },  // jupyterHub container
             ],
             serviceAccountName: "jupyter-hub",
@@ -178,12 +239,12 @@
     },
 
     // contents based on https://github.com/jupyterhub/zero-to-jupyterhub-k8s/blob/master/jupyterhub/templates/hub/rbac.yaml
-    {
+    jupyterHubRole: {
       apiVersion: "rbac.authorization.k8s.io/v1beta1",
       kind: "Role",
       metadata: {
         name: "jupyter-role",
-        namespace: params.namespace,
+        namespace: namespace,
       },
       rules: [
         {
@@ -217,46 +278,8 @@
         },
       ],
     },
-    {
-      apiVersion: "rbac.authorization.k8s.io/v1beta1",
-      kind: "Role",
-      metadata: {
-        name: "jupyter-notebook-role",
-        namespace: params.namespace,
-      },
-      rules: [
-        {
-          apiGroups: [
-            "",
-          ],
-          resources: [
-            "pods",
-            "deployments",
-            "services",
-          ],
-          verbs: [
-            "get",
-            "watch",
-            "list",
-            "create",
-            "delete",
-          ],
-        },
-        {
-          apiGroups: [
-            "kubeflow.org",
-          ],
-          resources: [
-            "*",
-          ],
-          verbs: [
-            "*",
-          ],
-        },
-      ],
-    },
 
-    {
+    jupyterHubServiceAccount: {
       apiVersion: "v1",
       kind: "ServiceAccount",
       metadata: {
@@ -264,24 +287,16 @@
           app: "jupyter-hub",
         },
         name: "jupyter-hub",
-        namespace: params.namespace,
-      },
-    },
-    {
-      apiVersion: "v1",
-      kind: "ServiceAccount",
-      metadata: {
-        name: "jupyter-notebook",
-        namespace: params.namespace,
+        namespace: namespace,
       },
     },
 
-    {
+    jupyterHubRoleBinding: {
       apiVersion: "rbac.authorization.k8s.io/v1beta1",
       kind: "RoleBinding",
       metadata: {
         name: "jupyter-role",
-        namespace: params.namespace,
+        namespace: namespace,
       },
       roleRef: {
         apiGroup: "rbac.authorization.k8s.io",
@@ -292,29 +307,9 @@
         {
           kind: "ServiceAccount",
           name: "jupyter-hub",
-          namespace: params.namespace,
+          namespace: namespace,
         },
       ],
     },
-    {
-      apiVersion: "rbac.authorization.k8s.io/v1beta1",
-      kind: "RoleBinding",
-      metadata: {
-        name: "jupyter-notebook-role",
-        namespace: params.namespace,
-      },
-      roleRef: {
-        apiGroup: "rbac.authorization.k8s.io",
-        kind: "Role",
-        name: "jupyter-notebook-role",
-      },
-      subjects: [
-        {
-          kind: "ServiceAccount",
-          name: "jupyter-notebook",
-          namespace: params.namespace,
-        },
-      ],
-    },
-  ],
+  },  // parts
 }

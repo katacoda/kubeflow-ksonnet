@@ -3,8 +3,7 @@
 // @description Kubeflow hyperparameter tuning component
 // @shortDescription hp-tuning
 // @param name string Name to give to each of the components
-// @optionalParam modeldbImage string gcr.io/kubeflow-images-public/modeldb-backend:v0.2.0 The image for modeldb
-// @optionalParam modeldbDatabaseImage string mongo:3.4 The image for modeldb database.
+// @optionalParam modeldbImage string gcr.io/kubeflow-images-public/modeldb-backend:v0.2.0 // @optionalParam modeldbDatabaseImage string mongo:3.4 The image for modeldb database.
 // @optionalParam modeldbFrontendImage string gcr.io/kubeflow-images-public/katib-frontend:v0.2.0 The image for modeldb frontend.
 // @optionalParam suggestionRandomImage string gcr.io/kubeflow-images-public/katib-suggestion-random:v0.2.0 The image for random suggestion.
 // @optionalParam suggestionGridImage string gcr.io/kubeflow-images-public/katib-suggestion-grid:v0.2.0 The image for grid suggestion.
