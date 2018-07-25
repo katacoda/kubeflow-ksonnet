@@ -96,7 +96,7 @@ RUN cd /root/serving && \
     bazel build -c opt --copt=-mavx --copt=-mavx2 --copt=-mfma --copt=-mfpmath=both --copt=-msse4.2 --config=cuda -k --verbose_failures --crosstool_top=@local_config_cuda//crosstool:toolchain tensorflow_serving/model_servers:tensorflow_model_server
 
 # Make a copy to /usr/bin instead of making softlinks because /root has 700 permissions
-RUN cp /root/serving/bazel-bin/tensorflow_serving/model_servers/tensorflow_model_server /usr/bin/tensorflow_model_server
+RUN cp /root/serving/bazel-bin/tensorflow_serving/model_servers/tensorflow_model_server /serving/bazel-bin/tensorflow_serving/model_servers/tensorflow_model_server
 
 # This seems to be some magic provided by nvidia-docker but we must be explicit
 # There didn't seem to be any special flags in the TF Dockerfile.devel-gpu to cover this either
